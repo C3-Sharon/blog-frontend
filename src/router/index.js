@@ -3,8 +3,9 @@ import HomeView from '../views/HomeView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import DetailView from '../views/DetailView.vue'
 import AdminNewView from '../views/AdminNewView.vue'
-import GalleryView from '../views/GalleryView.vue'
 import AdminEditView from '../views/AdminEditView.vue'
+import GalleryView from '../views/GalleryView.vue'
+import GalleryForm from '../views/GalleryForm.vue'
 const routes = [
   {
     path: '/',
@@ -37,8 +38,26 @@ const routes = [
   name: 'admin-edit',
   component: AdminEditView,
   meta: { requiresAuth: true }
+  },
+  {
+  path: '/gallery',
+  name: 'gallery',
+  component: GalleryView
+},
+{
+  path: '/gallery/upload',
+  name: 'gallery-upload',
+  component: GalleryForm,
+  meta: { requiresAuth: true }
+},
+{
+  path: '/gallery/edit/:id',
+  name: 'gallery-edit',
+  component: GalleryForm,
+  meta: { requiresAuth: true }
 }
 ]
+
 
 
 const router = createRouter({
