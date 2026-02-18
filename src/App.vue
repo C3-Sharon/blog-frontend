@@ -35,6 +35,7 @@ const isLoggedIn = ref(false)
 // 检查登录状态
 const checkLoginStatus = () => {
   isLoggedIn.value = !!sessionStorage.getItem('adminUser')
+  console.log('前端登录状态:', isLoggedIn.value)
 }
 
 // 退出登录

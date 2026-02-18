@@ -29,8 +29,45 @@
           ></textarea>
         </div>
         
+        <!-- 图片上传区域 (放在表单里面) -->
+        <div class="form-group">
+          <label>上传图片</label>
+          <div class="upload-area">
+            <input 
+              type="file" 
+              id="imageFile" 
+              accept="image/*"
+              @change="handleFileSelect"
+              ref="fileInput"
+              style="display: none;"
+            >
+            <button 
+              type="button" 
+              @click="fileInput.click()" 
+              class="upload-btn"
+            >
+              选择图片
+            </button>
+            <button 
+              type="button" 
+              @click="uploadImage" 
+              :disabled="uploading || !selectedFile"
+              class="upload-btn"
+              :style="{ background: uploading || !selectedFile ? '#ccc' : '#286fb5' }"
+            >
+              {{ uploading ? '上传中...' : '上传图片' }}
+            </button>
+          </div>
+          <div v-if="uploadProgress" class="upload-progress">{{ uploadProgress }}</div>
+          <div v-if="previewUrl" class="image-preview">
+            <img :src="previewUrl" alt="预览">
+            <button type="button" @click="insertImage" class="insert-btn">插入到文章</button>
+          </div>
+        </div>
+        
+        <!-- 发布按钮区域 -->
         <div class="form-actions">
-          <button type="submit" :disabled="submitting">
+          <button type="submit" class="submit-btn" :disabled="submitting">
             {{ submitting ? '发布中...' : '发布博客' }}
           </button>
           <router-link to="/" class="cancel-btn">取消</router-link>
@@ -44,16 +81,80 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { createBlog } from '../api/blog'
+import { uploadImage as uploadImageApi} from '../api/upload'
 
 const router = useRouter()
 const submitting = ref(false)
+const uploading = ref(false)
 const error = ref('')
+const fileInput = ref(null)
+const selectedFile = ref(null)
+const previewUrl = ref('')
+const uploadProgress = ref('')
 
 const form = reactive({
   title: '',
   content: ''
 })
 
+// 选择文件
+const handleFileSelect = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  
+  selectedFile.value = file
+  previewUrl.value = URL.createObjectURL(file)
+  uploadProgress.value = ''
+}
+
+// 上传图片
+const uploadImage = async () => {
+  if (!selectedFile.value) {
+    alert('请先选择图片')
+    return
+  }
+  
+  uploading.value = true
+  uploadProgress.value = '上传中...'
+  
+  try {
+    const res = await uploadImageApi(selectedFile.value)
+    console.log('上传响应:', res)
+    
+    if (res.success) {
+      uploadProgress.value = '上传成功！'
+      // 保存图片URL，等待插入
+      lastUploadedUrl.value = res.url
+    } else {
+      uploadProgress.value = '上传失败：' + res.message
+    }
+  } catch (err) {
+    console.error('上传失败:', err)
+    uploadProgress.value = '上传失败，请重试'
+  } finally {
+    uploading.value = false
+  }
+}
+
+// 插入图片
+const insertImage = () => {
+  if (!lastUploadedUrl.value) return
+  
+  const imageMarkdown = `\n![图片](${lastUploadedUrl.value})\n`
+  form.content += imageMarkdown
+  
+  // 清空预览
+  previewUrl.value = ''
+  selectedFile.value = null
+  fileInput.value.value = ''
+  uploadProgress.value = ''
+  lastUploadedUrl.value = ''
+}
+
+// 保存最后上传的图片URL
+const lastUploadedUrl = ref('')
+
+// 提交表单
 const handleSubmit = async () => {
   if (!form.title || !form.content) {
     error.value = '请填写完整信息'
@@ -114,6 +215,7 @@ input, textarea {
   border-radius: 5px;
   font-size: 16px;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 input:focus, textarea:focus {
@@ -121,13 +223,86 @@ input:focus, textarea:focus {
   border-color: #5787b7;
 }
 
+/* 上传区域 */
+.upload-area {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 10px;
+  border: 1px solid #ddd;
+  background: #f9f9f9;
+  border-radius: 5px;
+}
+
+.upload-area input[type="file"] {
+  display: none;
+}
+
+.upload-btn {
+  display: inline-block !important;
+  padding: 8px 16px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.upload-btn:hover:not(:disabled) {
+  background: #218838;
+}
+
+.upload-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.upload-progress {
+  margin-top: 10px;
+  color: #666;
+  font-size: 14px;
+}
+
+.image-preview {
+  margin-top: 15px;
+  position: relative;
+  display: inline-block;
+}
+
+.image-preview img {
+  max-width: 300px;
+  max-height: 200px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+}
+
+.insert-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  background: #286fb5;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.insert-btn:hover {
+  background: #0052a3;
+}
+
+/* 表单按钮 */
 .form-actions {
   display: flex;
   gap: 10px;
   margin-top: 30px;
 }
 
-button {
+.submit-btn {
   flex: 1;
   padding: 12px;
   background: #5787b7;
@@ -138,11 +313,11 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+.submit-btn:hover:not(:disabled) {
   background: #0052a3;
 }
 
-button:disabled {
+.submit-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
 }
