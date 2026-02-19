@@ -96,9 +96,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted,computed} from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBlogs, deleteBlog } from '../api/blog'
+import { checkLogin as checkLoginApi } from '../api/auth'
 
 const router = useRouter()
 const blogs = ref([])
@@ -190,10 +191,37 @@ const handleDelete = async (id) => {
   }
 }
 
-// 检查登录状态（暂时用 sessionStorage 模拟）
-const checkLogin = () => {
-  isAdmin.value = !!sessionStorage.getItem('adminUser')
+
+// 检查登录状态
+const checkLogin = async () => {
+  try {
+    const res = await checkLoginApi()
+    console.log('checkLogin 返回:', res)
+      console.log('isLoggedIn 值:', res?.isLoggedIn) 
+    if (res && typeof res === 'object') {
+      isAdmin.value = res.isLoggedIn || false
+      if (res.isLoggedIn) {
+        sessionStorage.setItem('adminUser', res.username)
+      } else {
+        sessionStorage.removeItem('adminUser')
+      }
+    } else {
+      console.error('返回数据格式错误:', res)
+      isAdmin.value = false
+    }
+  } catch (error) {
+    console.error('检查登录失败:', error)
+    console.error('错误详情:', error.response?.data || error.message)
+    isAdmin.value = false
+  }
 }
+
+
+// 监听路由变化
+watch(() => router.currentRoute.value, () => {
+  console.log('路由变化，重新检查 HomeView 登录状态')
+  checkLogin()
+})
 
 onMounted(() => {
   loadBlogs()

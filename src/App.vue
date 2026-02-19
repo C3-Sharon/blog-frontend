@@ -27,15 +27,21 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { logout } from './api/auth'
+import { logout,checkLogin } from './api/auth'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
 
 // 检查登录状态
-const checkLoginStatus = () => {
-  isLoggedIn.value = !!sessionStorage.getItem('adminUser')
-  console.log('前端登录状态:', isLoggedIn.value)
+const checkLoginStatus = async () => {
+  try {
+    const res = await checkLogin()
+    console.log('App 检查登录:', res)
+    isLoggedIn.value = res?.isLoggedIn || false
+  } catch (error) {
+    console.error('检查登录失败:', error)
+    isLoggedIn.value = false
+  }
 }
 
 // 退出登录
@@ -43,12 +49,17 @@ const handleLogout = async () => {
   try {
     await logout()
     sessionStorage.removeItem('adminUser')
-    isLoggedIn.value = false
-    router.push('/')
+    window.location.href = '/'  // 强制刷新
   } catch (error) {
     console.error('退出失败:', error)
+    window.location.href = '/'
   }
 }
+
+// 路由变化时检查
+router.afterEach(() => {
+  checkLoginStatus()
+})
 
 onMounted(() => {
   checkLoginStatus()
