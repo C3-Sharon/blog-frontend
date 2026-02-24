@@ -94,12 +94,17 @@ const handleSubmit = async () => {
   
   try {
     const id = route.params.id
+    // 逻辑：如果后端返回 Result.error("未登录")
+    // 拦截器会 Promise.reject({ success: false, message: "未登录" ... })
     await updateBlog(id, form)
+    
     alert('保存成功！')
     router.push('/')
   } catch (err) {
     console.error('保存失败:', err)
-    error.value = err.response?.data?.message || '保存失败，请重试'
+    // 逻辑修正：优先拿后端传回来的 message (比如 "未登录" 或 "更新失败")
+    // 如果 err 是拦截器抛出的 Result 对象，就取 err.message
+    error.value = err.message || (err.response?.data?.message) || '保存失败，请重试'
   } finally {
     submitting.value = false
   }

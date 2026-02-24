@@ -3,7 +3,6 @@
     <div class="login-box">
       <h2>管理员登录</h2>
       
-      <!-- 错误提示 -->
       <div v-if="error" class="error">{{ error }}</div>
       
       <form @submit.prevent="handleLogin">
@@ -12,7 +11,7 @@
           <input 
             type="text" 
             id="username" 
-            v-model="username" 
+            v-model="form.username" 
             required
             placeholder="请输入用户名"
           >
@@ -23,7 +22,7 @@
           <input 
             type="password" 
             id="password" 
-            v-model="password" 
+            v-model="form.password" 
             required
             placeholder="请输入密码"
           >
@@ -40,37 +39,40 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { login } from '../api/auth'
 
 const router = useRouter()
-const username = ref('')
-const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
+// 修正：模板中使用的是 v-model="form.username"，所以这里必须定义 form 对象
+const form = reactive({
+  username: '',
+  password: ''
+})
+
+// LoginView.vue 里的 handleLogin
 const handleLogin = async () => {
-  if (!username.value || !password.value) {
-    error.value = '请输入用户名和密码'
-    return
-  }
-  
   loading.value = true
   error.value = ''
-  
   try {
-    const response = await login(username.value, password.value)
-    console.log('登录响应:', response)
-    
-    // 登录成功，保存登录状态
-    sessionStorage.setItem('adminUser', username.value)
-    
-    // 跳转到管理页面
-    router.push('/admin/new')
+    const res = await login(form.username, form.password)
+    console.log('登录响应详情:', res)
+
+    const isOk = res && (res.loggedIn === true || res.isLoggedIn === true)
+
+    if (isOk) {
+      sessionStorage.setItem('adminUser', res.username || form.username)
+       
+      console.log('准备跳转前的 res:', res)
+      window.location.href = '/' // 先注释掉这一行测试
+    } else {
+      error.value = '后端返回验证失败'
+    }
   } catch (err) {
-    console.error('登录失败:', err)
-    error.value = '用户名或密码错误'
+    error.value = err.message || '网络异常'
   } finally {
     loading.value = false
   }

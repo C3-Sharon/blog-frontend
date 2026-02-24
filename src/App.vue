@@ -35,11 +35,12 @@ const isLoggedIn = ref(false)
 // 检查登录状态
 const checkLoginStatus = async () => {
   try {
-    const res = await checkLogin()
-    console.log('App 检查登录:', res)
-    isLoggedIn.value = res?.isLoggedIn || false
+    const res = await checkLogin() // 拦截器剥壳后，res 是 LoginStatus 对象
+    console.log('登录检查结果:', res)
+    
+    // 必须判断对象内部的字段，而不是判断对象本身
+    isLoggedIn.value = res && res.loggedIn === true 
   } catch (error) {
-    console.error('检查登录失败:', error)
     isLoggedIn.value = false
   }
 }

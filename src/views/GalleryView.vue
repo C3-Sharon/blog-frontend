@@ -1,8 +1,7 @@
 <template>
   <div class="gallery-container">
-    <h1>展厅</h1>
+    <h1>作品展厅</h1>
     
-    <!-- 分类导航 -->
     <div class="category-nav">
       <button 
         @click="switchCategory('painting')" 
@@ -18,442 +17,227 @@
       </button>
     </div>
 
-    <!-- 管理员上传按钮 -->
     <div v-if="isAdmin" class="admin-actions">
       <router-link to="/gallery/upload" class="upload-btn">
-        + 上传作品
+        <span class="plus-icon">+</span>
+        发布新作品
       </router-link>
     </div>
 
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+      <p>正在获取作品列表...</p>
+    </div>
 
-    <!-- 作品网格 -->
     <div v-else-if="artworks.length > 0" class="gallery-grid">
       <div v-for="item in artworks" :key="item.id" class="gallery-item">
-        <!-- 图片或文件图标 -->
         <div class="item-preview">
           <img 
-            v-if="item.fileType?.startsWith('image/')" 
+            v-if="isImage(item)" 
             :src="item.filePath" 
             :alt="item.title"
-            @click="viewArtwork(item)"
+            loading="lazy"
           >
-          <div v-else class="file-icon" @click="viewArtwork(item)">
-            📄
+          <div v-else class="file-icon-box">
+            <span class="file-ext">{{ getExt(item.filePath) }}</span>
+            <span class="icon">📄</span>
           </div>
+          
+          <a :href="item.filePath" class="hover-download" :download="item.title" target="_blank">
+            下载作品
+          </a>
         </div>
         
         <div class="item-info">
           <h3>{{ item.title }}</h3>
-          <p class="description">{{ item.description }}</p>
-          <div class="meta">
-            <span>{{ formatDate(item.createdAt) }}</span>
+          <p class="description">{{ item.description || '暂无描述' }}</p>
+          <div class="item-footer">
+            <span class="date">{{ formatDate(item.createdAt) }}</span>
+            <div v-if="isAdmin" class="mini-actions">
+              <router-link :to="'/gallery/edit/' + item.id" class="text-btn">编辑</router-link>
+              <button @click="handleDelete(item.id)" class="text-btn delete">删除</button>
+            </div>
           </div>
-        </div>
-        
-        <!-- 下载按钮 -->
-        <a 
-          :href="item.filePath" 
-          class="download-btn" 
-          download
-          target="_blank"
-        >
-          下载
-        </a>
-        
-        <!-- 管理员操作 -->
-        <div v-if="isAdmin" class="item-actions">
-          <router-link :to="'/gallery/edit/' + item.id" class="edit-btn">编辑</router-link>
-          <button @click="handleDelete(item.id)" class="delete-btn">删除</button>
         </div>
       </div>
     </div>
 
-    <!-- 无数据 -->
-    <div v-else class="no-data">
-      暂无作品
+    <div v-else class="empty-state">
+      <div class="empty-icon">📁</div>
+      <p>当前分类下还没有作品</p>
     </div>
 
-    <!-- 分页 -->
     <div class="pagination" v-if="totalPages > 1">
-      <button 
-        @click="goToPage(currentPage - 1)" 
-        :disabled="currentPage === 1"
-        class="page-btn"
-      >
-        上一页
-      </button>
-      
-      <button 
-        v-for="page in displayedPages" 
-        :key="page"
-        @click="goToPage(page)"
-        :class="['page-btn', { active: currentPage === page }]"
-      >
-        {{ page }}
-      </button>
-      
-      <button 
-        @click="goToPage(currentPage + 1)" 
-        :disabled="currentPage === totalPages"
-        class="page-btn"
-      >
-        下一页
-      </button>
+      <button @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">上一页</button>
+      <span class="page-num">{{ currentPage }} / {{ totalPages }}</span>
+      <button @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">下一页</button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { getArtworks, deleteArtwork } from '../api/gallery'
+import { checkLogin as checkLoginApi } from '../api/auth'
 
-const router = useRouter()
 const artworks = ref([])
 const loading = ref(true)
-const category = ref('painting')
+// 🚩 核心修改点：默认值改为 'painting'，确保初始化不为空
+const category = ref('painting') 
 const currentPage = ref(1)
 const totalPages = ref(1)
-const total = ref(0)
 const isAdmin = ref(false)
-const pageSize = ref(12)
 
-// 格式化日期
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
+// 1. 检查管理员身份
+const checkStatus = async () => {
+  try {
+    const res = await checkLoginApi()
+    // 对齐后端字段：res.loggedIn 或 res.isLoggedIn
+    isAdmin.value = res && (res.loggedIn === true || res.isLoggedIn === true)
+  } catch (e) {
+    isAdmin.value = false
+  }
 }
 
-// 计算显示的页码
-const displayedPages = computed(() => {
-  const pages = []
-  const maxVisible = 5
-  let start = Math.max(1, currentPage.value - Math.floor(maxVisible / 2))
-  let end = Math.min(totalPages.value, start + maxVisible - 1)
-  
-  if (end - start + 1 < maxVisible) {
-    start = Math.max(1, end - maxVisible + 1)
-  }
-  
-  for (let i = start; i <= end; i++) {
-    pages.push(i)
-  }
-  return pages
-})
-
-// 加载作品列表
+// 2. 加载作品列表
 const loadArtworks = async () => {
   loading.value = true
   try {
     const params = {
       category: category.value,
       page: currentPage.value,
-      size: pageSize.value
+      size: 12
     }
+    
     const res = await getArtworks(params)
-    artworks.value = res.data || []
-    totalPages.value = res.totalPages || 1
-    total.value = res.total || 0
+    
+    // 动态处理服务器地址（自动剔除 /api 尾缀）
+    const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+    const serverBase = apiBase.replace(/\/api$/, '').replace(/\/api\/$/, '')
+
+    // 适配后端 PageResult，尝试多种数据字段
+    const rawList = res.data || res.list || (Array.isArray(res) ? res : [])
+    
+    artworks.value = rawList.map(item => {
+      let path = item.filePath || ''
+      if (path && !path.startsWith('http')) {
+        const cleanPath = path.startsWith('/') ? path : `/${path}`
+        path = `${serverBase}${cleanPath}`
+      }
+      return { ...item, filePath: path }
+    })
+
+    totalPages.value = res.totalPages || res.totalPage || 1
   } catch (error) {
-    console.error('加载作品失败:', error)
-    artworks.value = []
+    console.error('展厅加载失败:', error)
   } finally {
     loading.value = false
   }
 }
 
-// 切换分类
+// 3. 分类切换逻辑
 const switchCategory = (cat) => {
   category.value = cat
   currentPage.value = 1
   loadArtworks()
 }
 
-// 翻页
 const goToPage = (page) => {
-  if (page < 1 || page > totalPages.value) return
   currentPage.value = page
   loadArtworks()
 }
 
-// 查看作品详情
-const viewArtwork = (item) => {
-  // 如果是图片，在当前页打开（可以用返回按钮）
-  if (item.fileType?.startsWith('image/')) {
-    // 创建一个全屏预览的模态框，或者在新标签页打开但保留导航
-    window.open(item.filePath, '_blank')
-  } else {
-    // 非图片文件直接下载
-    window.open(item.filePath, '_blank')
-  }
+// 4. 辅助识别逻辑
+const isImage = (item) => {
+  const imgExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+  return item.fileType?.includes('image') || 
+         imgExts.some(ext => item.filePath?.toLowerCase().endsWith(ext))
 }
 
-// 删除作品
+const getExt = (path) => path ? path.split('.').pop().toUpperCase() : 'FILE'
+const formatDate = (d) => d ? new Date(d).toLocaleDateString() : ''
+
 const handleDelete = async (id) => {
-  if (!confirm('确定要删除这个作品吗？')) return
+  if (!confirm('确认永久删除该作品吗？')) return
   try {
     await deleteArtwork(id)
     loadArtworks()
-  } catch (error) {
-    console.error('删除失败:', error)
+  } catch (e) {
     alert('删除失败')
   }
 }
 
-// 检查登录状态
-const checkLogin = () => {
-  isAdmin.value = !!sessionStorage.getItem('adminUser')
-}
-
 onMounted(() => {
+  checkStatus()
   loadArtworks()
-  checkLogin()
 })
 </script>
 
 <style scoped>
-.gallery-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+.gallery-container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+h1 { text-align: center; color: #2c3e50; font-size: 2.2rem; margin-bottom: 40px; }
+
+/* 分类导航样式 */
+.category-nav { display: flex; gap: 15px; justify-content: center; margin-bottom: 40px; }
+.category-btn { 
+  padding: 10px 30px; border: 2px solid #3498db; background: white; color: #3498db;
+  border-radius: 30px; cursor: pointer; transition: 0.3s; font-weight: 600;
+}
+.category-btn.active, .category-btn:hover { background: #3498db; color: white; }
+
+/* 管理员上传按钮 */
+.admin-actions { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+.upload-btn { 
+  display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  color: white; text-decoration: none; border-radius: 50px;
+  font-weight: 600; box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+  transition: 0.3s;
+}
+.upload-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4); }
+
+/* 作品卡片网格 */
+.gallery-grid { 
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+  gap: 30px; 
+}
+.gallery-item { 
+  background: white; border-radius: 15px; overflow: hidden; 
+  box-shadow: 0 8px 20px rgba(0,0,0,0.06); transition: 0.3s;
+}
+.gallery-item:hover { transform: translateY(-8px); box-shadow: 0 15px 35px rgba(0,0,0,0.12); }
+
+.item-preview { position: relative; height: 200px; background: #f8f9fa; overflow: hidden; }
+.item-preview img { width: 100%; height: 100%; object-fit: cover; }
+.file-icon-box { 
+  height: 100%; display: flex; flex-direction: column; 
+  align-items: center; justify-content: center; background: #edf2f7; 
 }
 
-h1 {
-  text-align: center;
-  color: #333;
-  margin-bottom: 30px;
+.hover-download { 
+  position: absolute; bottom: -45px; left: 0; width: 100%; padding: 12px;
+  background: rgba(52, 152, 219, 0.95); color: white; text-align: center;
+  text-decoration: none; transition: 0.3s; font-weight: 600;
 }
+.gallery-item:hover .hover-download { bottom: 0; }
 
-.category-nav {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  margin-bottom: 30px;
-}
+.item-info { padding: 20px; }
+.item-info h3 { margin: 0 0 10px; font-size: 1.2rem; color: #2c3e50; }
+.description { color: #7f8c8d; font-size: 0.9rem; line-height: 1.5; height: 42px; overflow: hidden; margin-bottom: 15px;}
 
-.category-btn {
-  padding: 10px 30px;
-  border: 2px solid #286fb5;
-  background: transparent;
-  color: #286fb5;
-  border-radius: 30px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.3s;
+.item-footer { 
+  display: flex; justify-content: space-between; align-items: center; 
+  border-top: 1px solid #f1f1f1; padding-top: 15px;
 }
+.date { font-size: 0.8rem; color: #bdc3c7; }
+.text-btn { background: none; border: none; color: #3498db; cursor: pointer; font-size: 0.85rem; margin-left: 12px; text-decoration: none; }
+.text-btn.delete { color: #e74c3c; }
 
-.category-btn:hover {
-  background: #286fb5;
-  color: white;
-}
+.loading-state, .empty-state { text-align: center; padding: 80px 0; color: #95a5a6; }
+.spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-.category-btn.active {
-  background: #286fb5;
-  color: white;
-}
-
-.admin-actions {
-  text-align: right;
-  margin-bottom: 20px;
-}
-
-.upload-btn {
-  display: inline-block;
-  padding: 10px 20px;
-  background: #28a745;
-  color: white;
-  text-decoration: none;
-  border-radius: 5px;
-  transition: background 0.3s;
-}
-
-.upload-btn:hover {
-  background: #218838;
-}
-
-.loading {
-  text-align: center;
-  padding: 50px;
-  color: #666;
-}
-
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
-  margin-top: 20px;
-}
-
-.gallery-item {
-  background: white;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  transition: transform 0.3s, box-shadow 0.3s;
-  position: relative;
-}
-
-.gallery-item:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 5px 20px rgba(0,0,0,0.15);
-}
-
-.item-preview {
-  height: 200px;
-  overflow: hidden;
-  cursor: pointer;
-  background: #f5f5f5;
-}
-
-.item-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.file-icon {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 48px;
-  color: #286fb5;
-  background: #f8f9fa;
-}
-
-.item-info {
-  padding: 15px;
-}
-
-.item-info h3 {
-  margin: 0 0 10px;
-  font-size: 18px;
-  color: #333;
-}
-
-.description {
-  color: #666;
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 10px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.meta {
-  color: #999;
-  font-size: 12px;
-}
-
-.download-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 5px 10px;
-  background: rgba(40, 111, 181, 0.9);
-  color: white;
-  text-decoration: none;
-  border-radius: 3px;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.gallery-item:hover .download-btn {
-  opacity: 1;
-}
-
-.item-actions {
-  display: flex;
-  gap: 10px;
-  padding: 15px;
-  border-top: 1px solid #eee;
-}
-
-.edit-btn, .delete-btn {
-  flex: 1;
-  padding: 5px;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 14px;
-  text-align: center;
-  text-decoration: none;
-}
-
-.edit-btn {
-  background: #286fb5;
-  color: white;
-}
-
-.delete-btn {
-  background: #dc3545;
-  color: white;
-}
-
-.pagination {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 40px;
-}
-
-.page-btn {
-  padding: 8px 15px;
-  border: 1px solid #ddd;
-  background: white;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.page-btn:hover:not(:disabled) {
-  background: #f0f7ff;
-  border-color: #286fb5;
-  color: #286fb5;
-}
-
-.page-btn.active {
-  background: #286fb5;
-  color: white;
-  border-color: #286fb5;
-}
-
-.page-btn:disabled {
-  background: #f5f5f5;
-  color: #999;
-  cursor: not-allowed;
-}
-
-.no-data {
-  text-align: center;
-  padding: 60px;
-  color: #666;
-  background: white;
-  border-radius: 10px;
-}
-
-@media (max-width: 768px) {
-  .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  }
-  
-  .category-nav {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .category-btn {
-    width: 200px;
-  }
-}
+.pagination { display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 50px; }
+.pagination button { padding: 8px 20px; border-radius: 8px; border: 1px solid #ddd; background: white; cursor: pointer; }
+.pagination button:disabled { background: #f9f9f9; color: #ccc; cursor: not-allowed; }
 </style>

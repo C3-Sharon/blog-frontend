@@ -1,33 +1,39 @@
 import axios from 'axios'
 
-// 创建 axios 实例
+// 1. 创建实例
 const request = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  // import.meta.env.VITE_API_BASE_URL 会自动读取 .env 文件中的配置
+  baseURL: import.meta.env.VITE_API_BASE_URL, 
   timeout: 10000,
-  withCredentials: true  // 允许携带 cookie（用于 session 登录）
+  withCredentials: true
 })
 
-// 请求拦截器
+// 2. 请求拦截器（如需加 Token 可在此处）
 request.interceptors.request.use(
   config => {
-    console.log('发送请求:', config.method, config.url, config.params || config.data)
     return config
   },
-  error => {
-    console.error('请求错误:', error)
-    return Promise.reject(error)
-  }
+  error => Promise.reject(error)
 )
 
-// 响应拦截器
+// 3. 响应拦截器：核心拆包逻辑
 request.interceptors.response.use(
   response => {
-    console.log('收到响应:', response.status, response.data)
-    return response.data  // 直接返回数据部分
+    const res = response.data
+    
+    // 如果后端返回的是 Result 对象 (包含 success, message, data)
+    if (res.success === false) {
+      // 业务报错，抛出异常让组件的 catch 捕获
+      return Promise.reject(new Error(res.message || '未知错误'))
+    }
+    
+    // 成功则直接返回 data 部分，组件里拿到的就是纯数据
+    return res.data
   },
   error => {
-    console.error('响应错误:', error.response?.status, error.response?.data || error.message)
-    return Promise.reject(error)
+    // 处理 HTTP 状态码错误（如 404, 500）
+    const msg = error.response?.data?.message || '网络连接异常'
+    return Promise.reject(new Error(msg))
   }
 )
 

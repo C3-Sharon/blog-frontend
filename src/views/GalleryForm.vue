@@ -3,11 +3,12 @@
     <div class="form-box">
       <h2>{{ isEdit ? '编辑作品' : '上传作品' }}</h2>
       
-      <!-- 错误提示 -->
       <div v-if="error" class="error">{{ error }}</div>
       
-      <!-- 加载状态 -->
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading-area">
+        <div class="spinner"></div>
+        <p>正在获取作品详情...</p>
+      </div>
       
       <form v-else @submit.prevent="handleSubmit" enctype="multipart/form-data">
         <div class="form-group">
@@ -39,7 +40,6 @@
           ></textarea>
         </div>
         
-        <!-- 文件上传（只在新增时显示） -->
         <div v-if="!isEdit" class="form-group">
           <label for="file">选择文件</label>
           <div class="file-upload-area">
@@ -55,21 +55,25 @@
               已选择: {{ selectedFile.name }}
               <button type="button" @click="clearFile" class="clear-btn">×</button>
             </div>
+            <div v-else class="upload-placeholder">
+              <span>点击或拖拽文件到此处上传</span>
+            </div>
           </div>
           <small class="help-text">支持图片、PDF、Word、文本文件</small>
         </div>
         
-        <!-- 当前文件（编辑时显示） -->
         <div v-if="isEdit && form.filePath" class="form-group">
           <label>当前文件</label>
           <div class="current-file">
-            <a :href="form.filePath" target="_blank">查看文件</a>
+            <a :href="fullFilePath" target="_blank" class="view-link">
+              🔍 查看当前存储的文件
+            </a>
           </div>
         </div>
         
         <div class="form-actions">
           <button type="submit" class="submit-btn" :disabled="submitting">
-            {{ submitting ? '保存中...' : (isEdit ? '保存修改' : '上传作品') }}
+            {{ submitting ? '保存中...' : (isEdit ? '保存修改' : '立即发布') }}
           </button>
           <router-link to="/gallery" class="cancel-btn">取消</router-link>
         </div>
@@ -91,13 +95,26 @@ const error = ref('')
 const fileInput = ref(null)
 const selectedFile = ref(null)
 
-const isEdit = computed(() => route.params.id)
+const isEdit = computed(() => !!route.params.id)
 
+// 初始化表单数据
 const form = reactive({
   title: '',
   category: 'painting',
   description: '',
   filePath: ''
+})
+
+// 计算完整的文件访问路径
+const fullFilePath = computed(() => {
+  if (!form.filePath) return '#'
+  if (form.filePath.startsWith('http')) return form.filePath
+  
+  // 对齐后端静态资源地址
+  const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+  const serverBase = apiBase.replace(/\/api$/, '').replace(/\/api\/$/, '')
+  const cleanPath = form.filePath.startsWith('/') ? form.filePath : `/${form.filePath}`
+  return `${serverBase}${cleanPath}`
 })
 
 // 处理文件选择
@@ -115,22 +132,26 @@ const clearFile = () => {
   }
 }
 
-// 获取作品详情（编辑时）
+// 获取作品详情（编辑模式）
 const fetchArtwork = async () => {
   if (!isEdit.value) return
   
   loading.value = true
+  error.value = ''
   try {
     const id = route.params.id
+    // 拦截器已处理 Result 包装，res 直接是 Artwork 对象
     const data = await getArtwork(id)
     
-    form.title = data.title
-    form.category = data.category
-    form.description = data.description || ''
-    form.filePath = data.filePath
+    if (data) {
+      form.title = data.title || ''
+      form.category = data.category || 'painting'
+      form.description = data.description || ''
+      form.filePath = data.filePath || ''
+    }
   } catch (err) {
-    console.error('获取作品失败:', err)
-    error.value = '获取作品失败，请重试'
+    console.error('获取详情失败:', err)
+    error.value = err.message || '获取作品详情失败，请刷新重试'
   } finally {
     loading.value = false
   }
@@ -138,30 +159,25 @@ const fetchArtwork = async () => {
 
 // 提交表单
 const handleSubmit = async () => {
-  if (!form.title || !form.category) {
-    error.value = '请填写完整信息'
-    return
-  }
-  
   if (!isEdit.value && !selectedFile.value) {
     error.value = '请选择要上传的文件'
     return
   }
-  
+
   submitting.value = true
   error.value = ''
   
   try {
     if (isEdit.value) {
-      // 编辑模式
+      // 【编辑模式】发送 JSON
       await updateArtwork(route.params.id, {
         title: form.title,
         category: form.category,
         description: form.description
       })
-      alert('保存成功！')
+      alert('修改成功！')
     } else {
-      // 上传模式
+      // 【上传模式】发送 FormData
       const formData = new FormData()
       formData.append('title', form.title)
       formData.append('category', form.category)
@@ -171,11 +187,10 @@ const handleSubmit = async () => {
       await uploadArtwork(formData)
       alert('上传成功！')
     }
-    
     router.push('/gallery')
   } catch (err) {
-    console.error('保存失败:', err)
-    error.value = err.response?.data?.message || '保存失败，请重试'
+    console.error('操作失败:', err)
+    error.value = err.message || '系统繁忙，请稍后再试'
   } finally {
     submitting.value = false
   }
@@ -195,169 +210,89 @@ onMounted(() => {
 
 .form-box {
   background: white;
-  padding: 30px;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  padding: 35px;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
 }
 
-h2 {
-  margin-bottom: 30px;
-  color: #333;
-  text-align: center;
-}
+h2 { margin-bottom: 25px; color: #2c3e50; text-align: center; font-weight: 600; }
 
-.form-group {
-  margin-bottom: 20px;
-}
+.form-group { margin-bottom: 20px; }
 
-label {
-  display: block;
-  margin-bottom: 5px;
-  color: #555;
-  font-weight: 500;
-}
+label { display: block; margin-bottom: 8px; color: #34495e; font-weight: 600; }
 
-input[type="text"],
-select,
-textarea {
+input[type="text"], select, textarea {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 16px;
-  font-family: inherit;
-  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  font-size: 15px;
+  transition: border-color 0.3s;
 }
 
-input[type="text"]:focus,
-select:focus,
-textarea:focus {
+input[type="text"]:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: #286fb5;
+  border-color: #3498db;
 }
 
 .file-upload-area {
-  border: 2px dashed #ddd;
-  padding: 20px;
-  border-radius: 5px;
+  border: 2px dashed #bdc3c7;
+  padding: 30px;
+  border-radius: 8px;
   text-align: center;
-  background: #f8f9fa;
+  background: #f9f9f9;
   position: relative;
+  transition: 0.3s;
 }
+
+.file-upload-area:hover { border-color: #3498db; background: #f0f7ff; }
 
 .file-upload-area input[type="file"] {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
 }
 
-.file-info {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #286fb5;
-}
+.upload-placeholder { color: #7f8c8d; }
+
+.file-info { display: flex; align-items: center; justify-content: center; gap: 10px; color: #2980b9; font-weight: 500; }
 
 .clear-btn {
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: #dc3545;
-  color: white;
-  border-radius: 50%;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
+  width: 22px; height: 22px; border: none; background: #e74c3c;
+  color: white; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
 
-.clear-btn:hover {
-  background: #c82333;
-}
+.current-file { padding: 12px; background: #edf2f7; border-radius: 8px; }
+.view-link { color: #3498db; text-decoration: none; font-weight: 500; }
+.view-link:hover { text-decoration: underline; }
 
-.help-text {
-  display: block;
-  margin-top: 5px;
-  color: #666;
-  font-size: 12px;
-}
-
-.current-file {
-  padding: 10px;
-  background: #f8f9fa;
-  border-radius: 5px;
-}
-
-.current-file a {
-  color: #286fb5;
-  text-decoration: none;
-}
-
-.current-file a:hover {
-  text-decoration: underline;
-}
-
-.form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 30px;
-}
+.form-actions { display: flex; gap: 15px; margin-top: 35px; }
 
 .submit-btn {
-  flex: 1;
-  padding: 12px;
-  background: #286fb5;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background 0.3s;
+  flex: 2; padding: 14px;
+  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  color: white; border: none; border-radius: 8px;
+  font-size: 16px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
 }
 
-.submit-btn:hover:not(:disabled) {
-  background: #0052a3;
-}
-
-.submit-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
+.submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4); }
 
 .cancel-btn {
-  flex: 1;
-  padding: 12px;
-  background: #f8f9fa;
-  color: #666;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  text-decoration: none;
-  text-align: center;
-  font-size: 16px;
+  flex: 1; padding: 14px; background: #f1f2f6; color: #57606f;
+  border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500;
 }
 
-.cancel-btn:hover {
-  background: #e9ecef;
+.loading-area { text-align: center; padding: 40px; color: #7f8c8d; }
+.spinner {
+  width: 40px; height: 40px; border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db; border-radius: 50%;
+  animation: spin 1s linear infinite; margin: 0 auto 15px;
 }
-
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 .error {
-  background: #f8d7da;
-  color: #721c24;
-  padding: 10px;
-  border-radius: 5px;
-  margin-bottom: 20px;
-  text-align: center;
+  background: #ff7675; color: white; padding: 12px;
+  border-radius: 8px; margin-bottom: 20px; text-align: center; font-weight: 500;
 }
 </style>

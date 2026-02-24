@@ -108,29 +108,27 @@ const handleFileSelect = (e) => {
 }
 
 // 上传图片
+// 上传图片
 const uploadImage = async () => {
-  if (!selectedFile.value) {
-    alert('请先选择图片')
-    return
-  }
+  if (!selectedFile.value) return
   
   uploading.value = true
   uploadProgress.value = '上传中...'
   
   try {
-    const res = await uploadImageApi(selectedFile.value)
-    console.log('上传响应:', res)
+    // 逻辑流：拦截器拆包后，res 直接就是那个 "/uploads/xxx.jpg" 字符串
+    const imageUrl = await uploadImageApi(selectedFile.value)
+    console.log('上传成功的URL:', imageUrl)
     
-    if (res.success) {
-      uploadProgress.value = '上传成功！'
-      // 保存图片URL，等待插入
-      lastUploadedUrl.value = res.url
-    } else {
-      uploadProgress.value = '上传失败：' + res.message
-    }
+    // 因为拦截器保证了只有 success 为 true 才会走到这里
+    uploadProgress.value = '上传成功！'
+    lastUploadedUrl.value = imageUrl // 直接保存字符串
+    
   } catch (err) {
+    // 逻辑：如果文件超大 (15MB+)，会被 GlobalExceptionHandler 捕获
+    // 拦截器 reject 后，err 会包含后端返回的 "文件过大..." 消息
     console.error('上传失败:', err)
-    uploadProgress.value = '上传失败，请重试'
+    uploadProgress.value = '上传失败：' + (err.message || '请重试')
   } finally {
     uploading.value = false
   }
