@@ -76,13 +76,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { getArtworks, deleteArtwork } from '../api/gallery'
 import { checkLogin as checkLoginApi } from '../api/auth'
 
 const artworks = ref([])
 const loading = ref(true)
-// 🚩 核心修改点：默认值改为 'painting'，确保初始化不为空
 const category = ref('painting') 
 const currentPage = ref(1)
 const totalPages = ref(1)
@@ -91,34 +90,58 @@ const isAdmin = ref(false)
 // 1. 检查管理员身份
 const checkStatus = async () => {
   try {
-    const res = await checkLoginApi()
-    // 对齐后端字段：res.loggedIn 或 res.isLoggedIn
-    isAdmin.value = res && (res.loggedIn === true || res.isLoggedIn === true)
+    const res = await checkLoginApi();
+    console.log("登录接口原始返回:", res);
+
+    // 尝试从各种可能的路径获取登录状态
+    // 1. res 2. res.data 3. res.data.data
+    const data = res.data?.data || res.data || res;
+    
+    // 只要其中一个字段为 true，就判定为管理员
+    isAdmin.value = data.loggedIn === true || 
+                    data.isLoggedIn === true || 
+                    data.success === true;
+                    
+    console.log("最终判定的 isAdmin 状态:", isAdmin.value);
   } catch (e) {
-    isAdmin.value = false
+    console.error("登录检查失败:", e);
+    isAdmin.value = false;
   }
 }
+
 
 // 2. 加载作品列表
 const loadArtworks = async () => {
   loading.value = true
   try {
-    const params = {
+    const response = await getArtworks({
       category: category.value,
       page: currentPage.value,
       size: 12
-    }
+    })
     
-    const res = await getArtworks(params)
-    
-    // 动态处理服务器地址（自动剔除 /api 尾缀）
-    const apiBase = import.meta.env.VITE_API_BASE_URL || ''
-    const serverBase = apiBase.replace(/\/api$/, '').replace(/\/api\/$/, '')
+    console.log("--- 最后的调试 ---")
+    console.log("response内容:", response)
 
-    // 适配后端 PageResult，尝试多种数据字段
-    const rawList = res.data || res.list || (Array.isArray(res) ? res : [])
-    
-    artworks.value = rawList.map(item => {
+    // 逻辑：如果 response 本身就是数组，直接用；
+    // 如果 response.data 是数组，用 response.data；
+    // 如果 response.data.data 是数组，用它。
+    let finalArray = []
+    if (Array.isArray(response)) {
+      finalArray = response
+    } else if (response.data && Array.isArray(response.data)) {
+      finalArray = response.data
+    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+      finalArray = response.data.data
+    }
+
+    console.log("最终确定的数组:", finalArray)
+    console.log("数组长度:", finalArray.length)
+
+    const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+    const serverBase = apiBase.replace(/\/api\/?$/, '')
+
+    artworks.value = finalArray.map(item => {
       let path = item.filePath || ''
       if (path && !path.startsWith('http')) {
         const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -126,16 +149,21 @@ const loadArtworks = async () => {
       }
       return { ...item, filePath: path }
     })
-
-    totalPages.value = res.totalPages || res.totalPage || 1
+    
+    // 自动适配总页数
+    totalPages.value = response.totalPages || (response.data && response.data.totalPages) || 1
+    
   } catch (error) {
-    console.error('展厅加载失败:', error)
+    console.error('解析流程崩溃:', error)
   } finally {
     loading.value = false
   }
 }
 
-// 3. 分类切换逻辑
+
+
+
+// 3. 分类切换
 const switchCategory = (cat) => {
   category.value = cat
   currentPage.value = 1
@@ -147,11 +175,12 @@ const goToPage = (page) => {
   loadArtworks()
 }
 
-// 4. 辅助识别逻辑
+// 4. 辅助逻辑
 const isImage = (item) => {
+  if (!item.filePath) return false
   const imgExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
   return item.fileType?.includes('image') || 
-         imgExts.some(ext => item.filePath?.toLowerCase().endsWith(ext))
+         imgExts.some(ext => item.filePath.toLowerCase().endsWith(ext))
 }
 
 const getExt = (path) => path ? path.split('.').pop().toUpperCase() : 'FILE'
@@ -160,10 +189,15 @@ const formatDate = (d) => d ? new Date(d).toLocaleDateString() : ''
 const handleDelete = async (id) => {
   if (!confirm('确认永久删除该作品吗？')) return
   try {
-    await deleteArtwork(id)
-    loadArtworks()
+    const res = await deleteArtwork(id)
+    const resultObj = res.data || res
+    if (resultObj.code === 200 || resultObj.success !== false) {
+      loadArtworks()
+    } else {
+      alert(resultObj.message || '删除失败')
+    }
   } catch (e) {
-    alert('删除失败')
+    alert('删除请求失败')
   }
 }
 
@@ -172,6 +206,7 @@ onMounted(() => {
   loadArtworks()
 })
 </script>
+
 
 <style scoped>
 .gallery-container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }

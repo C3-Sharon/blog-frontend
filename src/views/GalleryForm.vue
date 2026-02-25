@@ -97,7 +97,6 @@ const selectedFile = ref(null)
 
 const isEdit = computed(() => !!route.params.id)
 
-// 初始化表单数据
 const form = reactive({
   title: '',
   category: 'painting',
@@ -105,44 +104,34 @@ const form = reactive({
   filePath: ''
 })
 
-// 计算完整的文件访问路径
 const fullFilePath = computed(() => {
   if (!form.filePath) return '#'
   if (form.filePath.startsWith('http')) return form.filePath
-  
-  // 对齐后端静态资源地址
   const apiBase = import.meta.env.VITE_API_BASE_URL || ''
   const serverBase = apiBase.replace(/\/api$/, '').replace(/\/api\/$/, '')
   const cleanPath = form.filePath.startsWith('/') ? form.filePath : `/${form.filePath}`
   return `${serverBase}${cleanPath}`
 })
 
-// 处理文件选择
 const handleFileSelect = (e) => {
   const file = e.target.files[0]
   if (!file) return
   selectedFile.value = file
 }
 
-// 清除选择的文件
 const clearFile = () => {
   selectedFile.value = null
-  if (fileInput.value) {
-    fileInput.value.value = ''
-  }
+  if (fileInput.value) { fileInput.value.value = '' }
 }
 
-// 获取作品详情（编辑模式）
 const fetchArtwork = async () => {
   if (!isEdit.value) return
-  
   loading.value = true
-  error.value = ''
   try {
     const id = route.params.id
-    // 拦截器已处理 Result 包装，res 直接是 Artwork 对象
-    const data = await getArtwork(id)
-    
+    // 对齐后端 Result.ok(data)
+    const res = await getArtwork(id)
+    const data = res.data || res // 兼容拦截器是否剥离了第一层 data
     if (data) {
       form.title = data.title || ''
       form.category = data.category || 'painting'
@@ -150,56 +139,44 @@ const fetchArtwork = async () => {
       form.filePath = data.filePath || ''
     }
   } catch (err) {
-    console.error('获取详情失败:', err)
-    error.value = err.message || '获取作品详情失败，请刷新重试'
+    error.value = '获取详情失败'
   } finally {
     loading.value = false
   }
 }
 
-// 提交表单
 const handleSubmit = async () => {
   if (!isEdit.value && !selectedFile.value) {
-    error.value = '请选择要上传的文件'
+    error.value = '请选择文件'
     return
   }
-
   submitting.value = true
-  error.value = ''
-  
   try {
     if (isEdit.value) {
-      // 【编辑模式】发送 JSON
       await updateArtwork(route.params.id, {
         title: form.title,
         category: form.category,
         description: form.description
       })
-      alert('修改成功！')
     } else {
-      // 【上传模式】发送 FormData
       const formData = new FormData()
       formData.append('title', form.title)
       formData.append('category', form.category)
       formData.append('description', form.description)
       formData.append('file', selectedFile.value)
-      
       await uploadArtwork(formData)
-      alert('上传成功！')
     }
     router.push('/gallery')
   } catch (err) {
-    console.error('操作失败:', err)
-    error.value = err.message || '系统繁忙，请稍后再试'
+    error.value = err.message || '操作失败'
   } finally {
     submitting.value = false
   }
 }
 
-onMounted(() => {
-  fetchArtwork()
-})
+onMounted(() => fetchArtwork())
 </script>
+
 
 <style scoped>
 .form-container {
