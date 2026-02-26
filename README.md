@@ -44,12 +44,18 @@ npm install
 ```
 
 ### 环境配置
-创建 `.env` 文件（在项目根目录）：
-```env
+根据不同环境创建配置文件（在项目根目录）：
+1. 开发环境 (.env.development)
+```Code snippet
 VITE_API_BASE_URL=http://localhost:8080
 ```
-> 如果你的后端运行在其他端口，请修改这里的地址
 
+2. 生产环境 (.env.production)
+```
+Code snippet
+# 生产环境建议使用相对路径，由 Nginx 负责转发
+VITE_API_BASE_URL=/api址
+```
 ### 启动开发服务器
 ```bash
 npm run dev
@@ -60,16 +66,40 @@ VITE v5.x.x  ready in xxx ms
 ➜  Local:   http://localhost:5173/
 ```
 
-### 访问项目
-打开浏览器，访问 `http://localhost:5173`
-
-
-### 生产环境打包
-```bash
+### 生产环境部署
+#### 1. 打包项目：
+```Bash
 npm run build
 ```
-打包后的文件在 `dist` 目录
+#### 2.部署建议：
+将 `dist` 目录下的内容上传至服务器（如` /var/www/html`），并配合 Nginx 进行反向代理。
 
+#### Nginx 配置示例 (`/etc/nginx/sites-available/default`)：
+```Nginx
+Nginx
+server {
+    listen 80;
+    server_name 你的服务器IP;
+
+    # 前端静态资源
+    location / {
+        root /var/www/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 后端接口转发
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080/api/;
+        client_max_body_size 50M; # 允许大文件上传
+    }
+
+    # 图片资源映射
+    location /uploads/ {
+        alias /root/personal-blog/uploads/;
+    }
+}
+```
 ##  自定义配置
 
 ### 修改 GitHub / B站 链接
