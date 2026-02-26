@@ -74,14 +74,21 @@ const htmlContent = computed(() => {
   // 1. 转换 Markdown 为 HTML
   let html = marked(blog.value.content)
   
-  // 2. 强制路径纠偏
-  // 无论后端存的是 /uploads 还是 uploads，统一指向 http://localhost:8080/uploads
-  const baseURL = 'http://localhost:8080'
-  html = html.replace(/src="(\/)?uploads\//g, `src="${baseURL}/uploads/`)
+  // 2. 动态路径纠偏 (关键修改！)
+  // 获取当前环境的 API 基础地址（例如生产环境就是 /api）
+  // 我们需要的是去除 /api 后的根地址
+  const apiBase = import.meta.env.VITE_API_BASE_URL
+  
+  // 如果 apiBase 是 "/api"，我们希望图片前缀是空或者当前域名
+  // 如果 apiBase 包含 http，我们就用那个 http 地址
+  const imgPrefix = apiBase.includes('http') 
+    ? apiBase.split('/api')[0] 
+    : window.location.origin
+
+  html = html.replace(/src="(\/)?uploads\//g, `src="${imgPrefix}/uploads/`)
   
   return html
 })
-
 const formatDate = (d) => d ? new Date(d).toLocaleString() : ''
 
 const fetchBlog = async () => {
